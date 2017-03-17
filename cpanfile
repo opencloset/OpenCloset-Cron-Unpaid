@@ -1,3 +1,5 @@
+requires 'Config::INI::Reader';
+requires 'Date::Holidays::KR';
 requires 'DateTime';
 requires 'Getopt::Long::Descriptive';
 
