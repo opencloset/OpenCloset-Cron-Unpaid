@@ -1,6 +1,7 @@
 requires 'Config::INI::Reader';
 requires 'Date::Holidays::KR';
 requires 'DateTime';
+requires 'DateTime::Format::MySQL';
 requires 'Getopt::Long::Descriptive';
 
 # cpan.theopencloset.net
