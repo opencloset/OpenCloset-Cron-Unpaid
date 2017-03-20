@@ -38,6 +38,38 @@ my $DB = OpenCloset::Schema->connect(
     }
 );
 
+our $SMS_FORMAT =
+    "[열린옷장] %s님, 대여연장 혹은 반납연체로 발생된 미납 금액 %s원이 아직 입금되지 않았습니다. 금일 내로 지정계좌에 입금 요청드립니다. 국민은행 205737-04-003013, 예금주: 사단법인 열린옷장";
+our $LOG_FORMAT = "id(%d), name(%s), phone(%s), return_date(%s), sum_final_price(%s)";
+
+sub unpaid_cond {
+    my ( $dtf, $dt_start, $dt_end ) = @_;
+    return unless $dtf;
+    return unless $dt_start;
+    return unless $dt_end;
+
+    ## OpenCloset::Web::Plugin::Helpers::get_dbic_cond_attr_unpaid
+    return {
+        -and => [
+            'me.status_id'        => 9,
+            'order_details.stage' => { '>' => 0 },
+            -or                   => [ 'me.late_fee_pay_with' => '미납', 'me.compensation_pay_with' => '미납', ],
+            'me.return_date'      => {
+                -between => [ $dtf->format_datetime($dt_start), $dtf->format_datetime($dt_end) ],
+            }
+        ],
+    };
+}
+
+sub unpaid_attr {
+    return {
+        join      => [qw/ order_details /],
+        group_by  => [qw/ me.id /],
+        having    => { 'sum_final_price' => { '>' => 0 } },
+        '+select' => [ { sum => 'order_details.final_price', -as => 'sum_final_price' }, ],
+    };
+}
+
 my $worker1 = do {
     my $w;
     $w = OpenCloset::Cron::Worker->new(
@@ -55,42 +87,18 @@ my $worker1 = do {
 
             return if is_holiday($today);
 
-            ## OpenCloset::Web::Plugin::Helpers::get_dbic_cond_attr_unpaid
             my $dtf  = $DB->storage->datetime_parser;
-            my %cond = (
-                -and => [
-                    'me.status_id'        => 9,
-                    'order_details.stage' => { '>' => 0 },
-                    -or                   => [ 'me.late_fee_pay_with' => '미납', 'me.compensation_pay_with' => '미납', ],
-                    'me.return_date'      => {
-                        -between => [ $dtf->format_datetime($dt_start), $dtf->format_datetime($dt_end) ],
-                    }
-                ],
-            );
-
-            my %attr = (
-                join      => [qw/ order_details /],
-                group_by  => [qw/ me.id /],
-                having    => { 'sum_final_price' => { '>' => 0 } },
-                '+select' => [ { sum => 'order_details.final_price', -as => 'sum_final_price' }, ],
-            );
-
-            my $rs = $DB->resultset('Order')->search( \%cond, \%attr );
+            my $cond = unpaid_cond( $dtf, $dt_start, $dt_end );
+            my $attr = unpaid_attr();
+            my $rs   = $DB->resultset('Order')->search( $cond, $attr );
             while ( my $order = $rs->next ) {
                 my $user  = $order->user;
                 my $to    = $user->user_info->phone || q{};
                 my $price = $order->get_column('sum_final_price') || 0;
                 next unless $price;
 
-                my $msg = sprintf(
-                    '[열린옷장] %s님, 대여연장 혹은 반납연체로 발생된 미납 금액 %s원이 아직 입금되지 않았습니다. 금일 내로 지정계좌에 입금 요청드립니다. 국민은행 205737-04-003013, 예금주: 사단법인 열린옷장',
-                    $user->name, commify($price)
-                );
-
-                my $log = sprintf(
-                    'id(%d), name(%s), phone(%s), return_date(%s), sum_final_price(%s)',
-                    $order->id, $user->name, $to, $order->return_date, commify($price)
-                );
+                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price) );
+                my $log = sprintf( $LOG_FORMAT, $order->id, $user->name, $to, $order->return_date, commify($price) );
                 AE::log( info => $log );
 
                 send_sms( $to, $msg ) if $to;
@@ -116,42 +124,18 @@ my $worker2 = do {
 
             return if is_holiday($today);
 
-            ## OpenCloset::Web::Plugin::Helpers::get_dbic_cond_attr_unpaid
             my $dtf  = $DB->storage->datetime_parser;
-            my %cond = (
-                -and => [
-                    'me.status_id'        => 9,
-                    'order_details.stage' => { '>' => 0 },
-                    -or                   => [ 'me.late_fee_pay_with' => '미납', 'me.compensation_pay_with' => '미납', ],
-                    'me.return_date'      => {
-                        -between => [ $dtf->format_datetime($dt_start), $dtf->format_datetime($dt_end) ],
-                    }
-                ],
-            );
-
-            my %attr = (
-                join      => [qw/ order_details /],
-                group_by  => [qw/ me.id /],
-                having    => { 'sum_final_price' => { '>' => 0 } },
-                '+select' => [ { sum => 'order_details.final_price', -as => 'sum_final_price' }, ],
-            );
-
-            my $rs = $DB->resultset('Order')->search( \%cond, \%attr );
+            my $cond = unpaid_cond( $dtf, $dt_start, $dt_end );
+            my $attr = unpaid_attr();
+            my $rs   = $DB->resultset('Order')->search( $cond, $attr );
             while ( my $order = $rs->next ) {
                 my $user  = $order->user;
                 my $to    = $user->user_info->phone || q{};
                 my $price = $order->get_column('sum_final_price') || 0;
                 next unless $price;
 
-                my $msg = sprintf(
-                    '[열린옷장] %s님, 대여연장 혹은 반납연체로 발생된 미납 금액 %s원이 아직 입금되지 않았습니다. 금일 내로 지정계좌에 입금 요청드립니다. 국민은행 205737-04-003013, 예금주: 사단법인 열린옷장',
-                    $user->name, commify($price)
-                );
-
-                my $log = sprintf(
-                    'id(%d), name(%s), phone(%s), return_date(%s), sum_final_price(%s)',
-                    $order->id, $user->name, $to, $order->return_date, commify($price)
-                );
+                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price) );
+                my $log = sprintf( $LOG_FORMAT, $order->id, $user->name, $to, $order->return_date, commify($price) );
                 AE::log( info => $log );
 
                 send_sms( $to, $msg ) if $to;
