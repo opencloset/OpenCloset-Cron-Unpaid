@@ -126,6 +126,7 @@ my $cron = OpenCloset::Cron->new(
 
 $cron->start;
 
+## TODO: OpenCloset-Cron-SMS 와 중복됨
 sub send_sms {
     my ( $to, $text ) = @_;
 
@@ -142,6 +143,7 @@ sub send_sms {
     return \%data;
 }
 
+## TODO: OpenCloset-Cron-SMS 와 중복됨
 sub is_holiday {
     my $date = shift;
     return unless $date;
@@ -160,6 +162,7 @@ sub is_holiday {
     return;
 }
 
+## TODO: OpenCloset-Cron-SMS 와 중복됨
 sub commify {
     local $_ = shift;
     1 while s/((?:\A|[^.0-9])[-+]?\d+)(\d{3})/$1,$2/s;
