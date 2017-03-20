@@ -7,6 +7,7 @@ use Getopt::Long::Descriptive;
 
 use DateTime;
 
+use OpenCloset::Common::Unpaid qw/unpaid2nonpaid/;
 use OpenCloset::Config;
 use OpenCloset::Cron::Unpaid qw/unpaid_cond unpaid_attr is_holiday commify/;
 use OpenCloset::Cron::Worker;
@@ -115,11 +116,38 @@ my $worker2 = do {
     );
 };
 
+my $worker3 = do {
+    my $w;
+    $w = OpenCloset::Cron::Worker->new(
+        name      => 'notify_unpaid_2_week_after', # 미납후 2주
+        cron      => '40 10 * * *',
+        time_zone => $TIMEZONE,
+        cb        => sub {
+            my $name = $w->name;
+            my $cron = $w->cron;
+            AE::log( info => "$name\[$cron] launched" );
+
+            my $today = DateTime->today( time_zone => $TIMEZONE );
+            my $dt_start = $today->clone->subtract( days => 14 );
+            my $dt_end = $today->clone->subtract( days => 13 )->subtract( seconds => 1 );
+            my $dtf  = $DB->storage->datetime_parser;
+            my $cond = unpaid_cond( $dtf, $dt_start, $dt_end );
+            my $attr = unpaid_attr();
+            my $rs   = $DB->resultset('Order')->search( $cond, $attr );
+            while ( my $order = $rs->next ) {
+                unpaid2nonpaid($order);
+                my $log = sprintf( "order(%d) unpaid -> nonpaid", $order->id );
+                AE::log( info => $log );
+            }
+        }
+    );
+};
+
 my $cron = OpenCloset::Cron->new(
     aelog   => $APP_CONF->{aelog},
     port    => $APP_CONF->{port},
     delay   => $APP_CONF->{delay},
-    workers => [ $worker1, $worker2, ],
+    workers => [ $worker1, $worker2, $worker3, ],
 );
 
 $cron->start;
