@@ -6,7 +6,7 @@ use DateTime::Format::MySQL;
 
 use OpenCloset::Schema;
 
-use_ok( 'OpenCloset::Cron::Unpaid', qw/unpaid_cond unpaid_attr/ );
+use_ok( 'OpenCloset::Cron::Unpaid', qw/unpaid_cond unpaid_attr is_holiday commify/ );
 
 our $TIMEZONE = 'Asia/Seoul';
 
@@ -24,4 +24,9 @@ like( $parser->format_datetime($dt_end),   qr/23:59:59/ );
 
 is_deeply( $attr->{join}, [qw/order_details/] );
 
+my $holiday = $parser->parse_datetime('2017-05-05 00:00:00');
+is( is_holiday($holiday), 1 );
+is( is_holiday( $holiday->clone->subtract( days => 1 ) ), undef );
+
+is( commify('10000'), '10,000' );
 done_testing();
