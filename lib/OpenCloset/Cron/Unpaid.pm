@@ -1,5 +1,37 @@
 package OpenCloset::Cron::Unpaid;
 
+require Exporter;
+@ISA       = qw/Exporter/;
+@EXPORT_OK = qw/unpaid_cond unpaid_attr/;
+
+sub unpaid_cond {
+    my ( $dtf, $dt_start, $dt_end ) = @_;
+    return unless $dtf;
+    return unless $dt_start;
+    return unless $dt_end;
+
+    ## OpenCloset::Web::Plugin::Helpers::get_dbic_cond_attr_unpaid
+    return {
+        -and => [
+            'me.status_id'        => 9,
+            'order_details.stage' => { '>' => 0 },
+            -or                   => [ 'me.late_fee_pay_with' => '미납', 'me.compensation_pay_with' => '미납', ],
+            'me.return_date'      => {
+                -between => [ $dtf->format_datetime($dt_start), $dtf->format_datetime($dt_end) ],
+            }
+        ],
+    };
+}
+
+sub unpaid_attr {
+    return {
+        join      => [qw/ order_details /],
+        group_by  => [qw/ me.id /],
+        having    => { 'sum_final_price' => { '>' => 0 } },
+        '+select' => [ { sum => 'order_details.final_price', -as => 'sum_final_price' }, ],
+    };
+}
+
 1;
 
 =encoding utf8
