@@ -6,8 +6,10 @@ use FindBin qw( $Script );
 use Getopt::Long::Descriptive;
 
 use DateTime;
+use JSON qw/decode_json/;
 
-use OpenCloset::Common::Unpaid qw/unpaid2nonpaid/;
+use Iamport::REST::Client;
+use OpenCloset::Common::Unpaid qw/unpaid2nonpaid merchant_uid create_vbank/;
 use OpenCloset::Config;
 use OpenCloset::Cron::Unpaid qw/unpaid_cond unpaid_attr is_holiday commify/;
 use OpenCloset::Cron::Worker;
@@ -39,8 +41,10 @@ my $DB = OpenCloset::Schema->connect(
 );
 
 our $SMS_FORMAT =
-    "[열린옷장] %s님, 대여연장 혹은 반납연체로 발생된 미납 금액 %s원이 아직 입금되지 않았습니다. 금일 내로 지정계좌에 입금 요청드립니다. 국민은행 205737-04-003013, 예금주: 사단법인 열린옷장";
+    "[열린옷장] %s님, 대여연장 혹은 반납연체로 발생된 미납 금액 %s원이 아직 입금되지 않았습니다. 금일 내로 지정계좌에 입금 요청드립니다. 국민은행 %s, 예금주: %s";
 our $LOG_FORMAT = "id(%d), name(%s), phone(%s), return_date(%s), sum_final_price(%s)";
+
+my $iamport = Iamport::REST::Client->new( key => $CONF->{iamport}{key}, secret => $CONF->{iamport}{secret} );
 
 my $worker1 = do {
     my $w;
@@ -64,12 +68,37 @@ my $worker1 = do {
             my $attr = unpaid_attr();
             my $rs   = $DB->resultset('Order')->search( $cond, $attr );
             while ( my $order = $rs->next ) {
-                my $user  = $order->user;
-                my $to    = $user->user_info->phone || q{};
-                my $price = $order->get_column('sum_final_price') || 0;
+                my $user      = $order->user;
+                my $user_info = $user->user_info;
+                my $to        = $user_info->phone || q{};
+                my $price     = $order->get_column('sum_final_price') || 0;
                 next unless $price;
 
-                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price) );
+                my $params = {
+                    merchant_uid => merchant_uid( "staff-%d-", $order->id ),
+                    amount       => $price,
+                    vbank_due      => time + 86400 * 3,                                         # +3d
+                    vbank_holder   => '열린옷장-' . $user->name,
+                    vbank_code     => '04',                                                     # 국민은행
+                    name           => sprintf( "미납금#%d", $order->id ),
+                    buyer_name     => $user->name,
+                    buyer_email    => $user->email,
+                    buyer_tel      => $user_info->phone,
+                    buyer_addr     => $user_info->address2,
+                    'notice_url[]' => 'https://staff.theopencloset.net/webhooks/iamport/unpaid',
+                };
+
+                my ( $payment_log, $error ) = create_vbank( $iamport, $order, $params );
+                unless ($payment_log) {
+                    AE::log( error => $error );
+                    next;
+                }
+
+                my $data         = decode_json( $payment_log->detail );
+                my $vbank_num    = $data->{response}{vbank_num};
+                my $vbank_holder = $data->{response}{vbank_holder};
+
+                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price), $vbank_num, $vbank_holder );
                 my $log = sprintf( $LOG_FORMAT, $order->id, $user->name, $to, $order->return_date, commify($price) );
                 AE::log( info => $log );
 
@@ -101,12 +130,37 @@ my $worker2 = do {
             my $attr = unpaid_attr();
             my $rs   = $DB->resultset('Order')->search( $cond, $attr );
             while ( my $order = $rs->next ) {
-                my $user  = $order->user;
-                my $to    = $user->user_info->phone || q{};
-                my $price = $order->get_column('sum_final_price') || 0;
+                my $user      = $order->user;
+                my $user_info = $user->user_info;
+                my $to        = $user_info->phone || q{};
+                my $price     = $order->get_column('sum_final_price') || 0;
                 next unless $price;
 
-                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price) );
+                my $params = {
+                    merchant_uid => merchant_uid( "staff-%d-", $order->id ),
+                    amount       => $price,
+                    vbank_due      => time + 86400 * 3,                                         # +3d
+                    vbank_holder   => '열린옷장-' . $user->name,
+                    vbank_code     => '04',                                                     # 국민은행
+                    name           => sprintf( "미납금#%d", $order->id ),
+                    buyer_name     => $user->name,
+                    buyer_email    => $user->email,
+                    buyer_tel      => $user_info->phone,
+                    buyer_addr     => $user_info->address2,
+                    'notice_url[]' => 'https://staff.theopencloset.net/webhooks/iamport/unpaid',
+                };
+
+                my ( $payment_log, $error ) = create_vbank( $iamport, $order, $params );
+                unless ($payment_log) {
+                    AE::log( error => $error );
+                    next;
+                }
+
+                my $data         = decode_json( $payment_log->detail );
+                my $vbank_num    = $data->{response}{vbank_num};
+                my $vbank_holder = $data->{response}{vbank_holder};
+
+                my $msg = sprintf( $SMS_FORMAT, $user->name, commify($price), $vbank_num, $vbank_holder );
                 my $log = sprintf( $LOG_FORMAT, $order->id, $user->name, $to, $order->return_date, commify($price) );
                 AE::log( info => $log );
 
