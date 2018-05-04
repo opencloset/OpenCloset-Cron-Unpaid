@@ -1,6 +1,6 @@
 # OpenCloset-Cron-Unpaid #
 
-[![Build Status](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid.svg?branch=v0.1.0)](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid)
+[![Build Status](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid.svg?branch=v0.1.1)](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid)
 
 미납금과 관련된 cronjob
 
