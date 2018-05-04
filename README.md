@@ -1,5 +1,7 @@
 # OpenCloset-Cron-Unpaid #
 
+[![Build Status](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid.svg?branch=v0.1.0)](https://travis-ci.org/opencloset/OpenCloset-Cron-Unpaid)
+
 미납금과 관련된 cronjob
 
 - 반납 3일후에 미납금 문자전송 (AM 10:30)
